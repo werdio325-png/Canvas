@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .bg-dot-grid {
+    background-image: radial-gradient(#d4d4d8 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .dark .bg-dot-grid {
+    background-image: radial-gradient(#404040 1px, transparent 1px);
+  }
+}

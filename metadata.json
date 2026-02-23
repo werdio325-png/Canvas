@@ -1,0 +1,5 @@
+{
+  "name": "Simple Dot Grid Canvas",
+  "description": "A simple, finite canvas with a dot grid background.",
+  "requestFramePermissions": []
+}
