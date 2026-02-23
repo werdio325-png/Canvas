@@ -4,7 +4,8 @@
  */
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline } from 'lucide-react';
+import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
 
 export type CanvasObjectType = 'text' | 'image';
 
@@ -44,11 +45,24 @@ export default function App() {
   // Selection and Dragging state
   const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [draggingObject, setDraggingObject] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragContext, setDragContext] = useState<{ startX: number, startY: number, initialPositions: Record<string, {x: number, y: number}> } | null>(null);
   const [resizingObject, setResizingObject] = useState<{ id: string, startX: number, startY: number, startWidth: number, startHeight: number, type: 'text' | 'image' } | null>(null);
   const isPinchingRef = useRef(false);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [showTextColorPicker, setShowTextColorPicker] = useState(false);
+  const [showBlockColorPicker, setShowBlockColorPicker] = useState(false);
+  const [showInstruction, setShowInstruction] = useState(true);
+  const [prompt, setPrompt] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const COLORS = ['#ffffff', '#171717', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
+
+  // Auto-hide instruction
+  useEffect(() => {
+    const t = setTimeout(() => setShowInstruction(false), 5000);
+    return () => clearTimeout(t);
+  }, []);
 
   // Expose API for future AI integration
   useEffect(() => {
@@ -64,19 +78,7 @@ export default function App() {
     };
   }, [objects]);
 
-  // Handle keyboard shortcuts (Delete objects)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't delete if we are typing in a textarea
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-      
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        setObjects(prev => prev.filter(obj => !obj.isSelected));
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  // Keyboard shortcuts removed as requested
 
   // Toggle dark mode class on document element
   useEffect(() => {
@@ -172,29 +174,19 @@ export default function App() {
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       
-      // Handle pinch-to-zoom on trackpads (usually sends ctrlKey)
-      // or standard mouse wheel
-      if (e.ctrlKey) {
-        const scaleChange = e.deltaY > 0 ? 0.95 : 1.05;
+      // Zoom on wheel scroll
+      const scaleChange = e.deltaY > 0 ? 0.9 : 1.1;
+      
+      setTransform(prev => {
+        let newScale = prev.scale * scaleChange;
+        newScale = Math.max(0.1, Math.min(newScale, 5));
         
-        setTransform(prev => {
-          let newScale = prev.scale * scaleChange;
-          newScale = Math.max(0.1, Math.min(newScale, 5));
-          
-          const scaleRatio = newScale / prev.scale;
-          const newX = e.clientX - (e.clientX - prev.x) * scaleRatio;
-          const newY = e.clientY - (e.clientY - prev.y) * scaleRatio;
-          
-          return { x: newX, y: newY, scale: newScale };
-        });
-      } else {
-        // Handle two-finger scroll on trackpads as panning
-        setTransform(prev => ({
-          ...prev,
-          x: prev.x - e.deltaX,
-          y: prev.y - e.deltaY
-        }));
-      }
+        const scaleRatio = newScale / prev.scale;
+        const newX = e.clientX - (e.clientX - prev.x) * scaleRatio;
+        const newY = e.clientY - (e.clientY - prev.y) * scaleRatio;
+        
+        return { x: newX, y: newY, scale: newScale };
+      });
     };
 
     container.addEventListener('touchstart', handleTouchStart, { passive: false });
@@ -214,8 +206,21 @@ export default function App() {
 
   // Mouse event handlers for the canvas (for tools)
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Only handle left clicks, and ignore if we're pinching
-    if (e.button !== 0 || (e.pointerType === 'touch' && !e.isPrimary) || isPinchingRef.current) return;
+    if (showTextColorPicker) setShowTextColorPicker(false);
+    if (showBlockColorPicker) setShowBlockColorPicker(false);
+
+    if (isPinchingRef.current) return;
+
+    // Middle mouse button for panning
+    if (e.button === 1) {
+      e.preventDefault();
+      setIsPanning(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    // Only handle left clicks for tools
+    if (e.button !== 0 || (e.pointerType === 'touch' && !e.isPrimary)) return;
 
     if (editingObjectId) {
       setEditingObjectId(null);
@@ -253,6 +258,16 @@ export default function App() {
 
   const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isPinchingRef.current) return;
+
+    if (isPanning) {
+      setTransform(prev => ({
+        ...prev,
+        x: prev.x + e.movementX,
+        y: prev.y + e.movementY
+      }));
+      return;
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / transform.scale;
     const y = (e.clientY - rect.top) / transform.scale;
@@ -278,10 +293,12 @@ export default function App() {
     }
 
     // Handle object dragging
-    if (draggingObject && activeTool === 'select') {
+    if (dragContext && activeTool === 'select') {
+      const dx = x - dragContext.startX;
+      const dy = y - dragContext.startY;
       setObjects(prev => prev.map(obj => 
-        obj.id === draggingObject 
-          ? { ...obj, x: x - dragOffset.x, y: y - dragOffset.y } 
+        dragContext.initialPositions[obj.id]
+          ? { ...obj, x: dragContext.initialPositions[obj.id].x + dx, y: dragContext.initialPositions[obj.id].y + dy }
           : obj
       ));
       return;
@@ -306,13 +323,18 @@ export default function App() {
     }));
   };
 
-  const handleCanvasPointerUp = () => {
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isPanning) {
+      setIsPanning(false);
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
+      return;
+    }
     if (isSelecting) {
       setIsSelecting(false);
       setSelectionBox(null);
     }
-    if (draggingObject) {
-      setDraggingObject(null);
+    if (dragContext) {
+      setDragContext(null);
     }
     if (resizingObject) {
       setResizingObject(null);
@@ -402,6 +424,135 @@ export default function App() {
     }
   };
 
+  const handlePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim() || isLoading) return;
+    
+    setIsLoading(true);
+    const currentPrompt = prompt;
+    setPrompt('');
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const modifyCanvasDeclaration: FunctionDeclaration = {
+        name: "modifyCanvas",
+        description: "Modifies the canvas by adding, updating, or deleting objects. The canvas has a coordinate system from x: 0 to 2400 and y: 0 to 1800. The center is around x: 1200, y: 900.",
+        parameters: {
+          type: GenAIType.OBJECT,
+          properties: {
+            add: {
+              type: GenAIType.ARRAY,
+              description: "List of new objects to add to the canvas.",
+              items: {
+                type: GenAIType.OBJECT,
+                properties: {
+                  type: { type: GenAIType.STRING, description: "'text' or 'image'" },
+                  x: { type: GenAIType.NUMBER },
+                  y: { type: GenAIType.NUMBER },
+                  width: { type: GenAIType.NUMBER },
+                  height: { type: GenAIType.NUMBER },
+                  content: { type: GenAIType.STRING, description: "Text content (HTML allowed)" },
+                  color: { type: GenAIType.STRING, description: "Hex color code" },
+                  fontSize: { type: GenAIType.NUMBER },
+                  textAlign: { type: GenAIType.STRING, description: "'left', 'center', or 'right'" }
+                },
+                required: ["type", "x", "y", "width", "height"]
+              }
+            },
+            update: {
+              type: GenAIType.ARRAY,
+              description: "List of objects to update.",
+              items: {
+                type: GenAIType.OBJECT,
+                properties: {
+                  id: { type: GenAIType.STRING },
+                  x: { type: GenAIType.NUMBER },
+                  y: { type: GenAIType.NUMBER },
+                  width: { type: GenAIType.NUMBER },
+                  height: { type: GenAIType.NUMBER },
+                  content: { type: GenAIType.STRING },
+                  color: { type: GenAIType.STRING },
+                  fontSize: { type: GenAIType.NUMBER },
+                  textAlign: { type: GenAIType.STRING }
+                },
+                required: ["id"]
+              }
+            },
+            delete: {
+              type: GenAIType.ARRAY,
+              description: "List of object IDs to delete.",
+              items: {
+                type: GenAIType.STRING
+              }
+            }
+          }
+        }
+      };
+
+      const systemInstruction = `You are an AI assistant integrated into a canvas editor. 
+You can modify the canvas based on the user's request.
+The canvas is 2400x1800. The center is at x: 1200, y: 900.
+Current canvas objects:
+${JSON.stringify(objects, null, 2)}
+
+When adding text, use reasonable defaults like width: 300, height: 100, fontSize: 32, color: '${isDarkMode ? '#ffffff' : '#000000'}'.
+Always use the modifyCanvas tool to apply changes.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: currentPrompt,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: [modifyCanvasDeclaration] }],
+          temperature: 0.2,
+        },
+      });
+
+      const functionCalls = response.functionCalls;
+      if (functionCalls && functionCalls.length > 0) {
+        const call = functionCalls[0];
+        if (call.name === 'modifyCanvas') {
+          const args = call.args as any;
+          
+          setObjects(prev => {
+            let next = [...prev];
+            
+            if (args.delete && Array.isArray(args.delete)) {
+              next = next.filter(o => !args.delete.includes(o.id));
+            }
+            
+            if (args.update && Array.isArray(args.update)) {
+              args.update.forEach((u: any) => {
+                const idx = next.findIndex(o => o.id === u.id);
+                if (idx !== -1) {
+                  next[idx] = { ...next[idx], ...u };
+                }
+              });
+            }
+            
+            if (args.add && Array.isArray(args.add)) {
+              args.add.forEach((a: any) => {
+                next.push({
+                  ...a,
+                  id: `${a.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  isSelected: false
+                });
+              });
+            }
+            
+            return next;
+          });
+        }
+      }
+    } catch (error) {
+      console.error("AI Error:", error);
+      alert("Ошибка при обращении к ИИ. Проверьте консоль.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div 
       ref={containerRef}
@@ -470,15 +621,30 @@ export default function App() {
                   const mouseX = (e.clientX - rect.left) / transform.scale;
                   const mouseY = (e.clientY - rect.top) / transform.scale;
                   
-                  setDraggingObject(obj.id);
-                  setDragOffset({ x: mouseX - obj.x, y: mouseY - obj.y });
+                  let draggedIds = [obj.id];
+                  
+                  if (obj.isSelected) {
+                    draggedIds = objects.filter(o => o.isSelected).map(o => o.id);
+                  } else {
+                    setObjects(prev => {
+                      const newObjs = prev.map(o => ({ ...o, isSelected: o.id === obj.id }));
+                      const selected = newObjs.find(o => o.id === obj.id);
+                      const others = newObjs.filter(o => o.id !== obj.id);
+                      return selected ? [...others, selected] : newObjs;
+                    });
+                  }
 
-                  // Select this object and bring to front in array
-                  setObjects(prev => {
-                    const newObjs = prev.map(o => ({ ...o, isSelected: o.id === obj.id }));
-                    const selected = newObjs.find(o => o.id === obj.id);
-                    const others = newObjs.filter(o => o.id !== obj.id);
-                    return selected ? [...others, selected] : newObjs;
+                  const initialPositions: Record<string, {x: number, y: number}> = {};
+                  objects.forEach(o => {
+                    if (draggedIds.includes(o.id)) {
+                      initialPositions[o.id] = { x: o.x, y: o.y };
+                    }
+                  });
+                  
+                  setDragContext({
+                    startX: mouseX,
+                    startY: mouseY,
+                    initialPositions
                   });
                 }
               }}
@@ -563,8 +729,8 @@ export default function App() {
       
       <div className="absolute top-4 left-4 right-4 text-center pointer-events-none flex justify-between items-start">
         <div className="flex-1" />
-        <div className={`inline-block px-4 py-2 rounded-full text-sm backdrop-blur-sm shadow-lg transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80 text-neutral-200' : 'bg-neutral-800/80 text-white'}`}>
-          Используйте два пальца для перемещения и масштабирования
+        <div className={`transition-opacity duration-1000 ${showInstruction ? 'opacity-100' : 'opacity-0'} inline-block px-4 py-2 rounded-full text-sm backdrop-blur-sm shadow-lg transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80 text-neutral-200' : 'bg-neutral-800/80 text-white'}`}>
+          Используйте два пальца или колесико мыши для перемещения и масштабирования
         </div>
         <div className="flex-1 flex justify-end pointer-events-auto">
           <button
@@ -605,18 +771,30 @@ export default function App() {
             <button onMouseDown={(e) => applyTextFormat(e, 'underline')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}><Underline size={18} /></button>
             
             {/* Inline Color Picker */}
-            <input
-              type="color"
-              onChange={(e) => {
-                document.execCommand('foreColor', false, e.target.value);
-                if (editingObjectId) {
-                  const el = document.getElementById(`text-edit-${editingObjectId}`);
-                  if (el) setObjects(prev => prev.map(o => o.id === editingObjectId ? { ...o, content: el.innerHTML } : o));
-                }
-              }}
-              className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent ml-1"
-              title="Цвет выделенного текста"
-            />
+            <div className="relative ml-1 flex items-center">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setShowTextColorPicker(!showTextColorPicker); setShowBlockColorPicker(false); }}
+                className={`w-6 h-6 rounded-full border-2 ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}
+                style={{ background: 'linear-gradient(45deg, #ef4444, #3b82f6, #22c55e)' }}
+                title="Цвет выделенного текста"
+              />
+              {showTextColorPicker && (
+                <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-800 border border-neutral-700' : 'bg-white border border-neutral-200'}`}>
+                  {COLORS.map(c => (
+                    <button
+                      key={c}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyTextFormat(e, 'foreColor', c);
+                        setShowTextColorPicker(false);
+                      }}
+                      className="w-6 h-6 rounded-full border border-neutral-200 dark:border-neutral-700 hover:scale-110 transition-transform"
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Block Formatting */}
@@ -633,14 +811,39 @@ export default function App() {
           </div>
 
           {/* Block Color Picker */}
-          <div className="flex items-center px-2">
-            <input
-              type="color"
-              value={selectedTextObj.color || (isDarkMode ? '#ffffff' : '#000000')}
-              onChange={(e) => updateSelectedText({ color: e.target.value })}
-              className="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent"
+          <div className={`flex items-center px-2 border-r relative ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
+            <button
+              onClick={() => { setShowBlockColorPicker(!showBlockColorPicker); setShowTextColorPicker(false); }}
+              className="w-6 h-6 rounded-full border-2 border-neutral-300 dark:border-neutral-600"
+              style={{ backgroundColor: selectedTextObj.color || (isDarkMode ? '#ffffff' : '#000000') }}
               title="Цвет всего блока"
             />
+            {showBlockColorPicker && (
+              <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-800 border border-neutral-700' : 'bg-white border border-neutral-200'}`}>
+                {COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => {
+                      updateSelectedText({ color: c });
+                      setShowBlockColorPicker(false);
+                    }}
+                    className="w-6 h-6 rounded-full border border-neutral-200 dark:border-neutral-700 hover:scale-110 transition-transform"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Delete Button */}
+          <div className="flex items-center px-2">
+            <button
+              onClick={() => setObjects(prev => prev.filter(o => o.id !== selectedTextObj.id))}
+              className={`p-1.5 rounded-lg text-red-500 ${isDarkMode ? 'hover:bg-red-900/30' : 'hover:bg-red-100'}`}
+              title="Удалить"
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
         </div>
       )}
@@ -651,7 +854,7 @@ export default function App() {
           className={`absolute pointer-events-auto flex items-center gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/90 border border-neutral-700' : 'bg-white/90 border border-neutral-200'}`}
           style={getToolbarStyle(selectedImageObj)}
         >
-          <div className="flex items-center gap-1 px-2">
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
             <button
               onClick={() => updateSelectedImage({ borderRadius: 0 })}
               className={`p-1.5 rounded-lg ${selectedImageObj.borderRadius === 0 || !selectedImageObj.borderRadius ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}
@@ -674,39 +877,50 @@ export default function App() {
               <Circle size={18} />
             </button>
           </div>
+
+          {/* Delete Button */}
+          <div className="flex items-center px-2">
+            <button
+              onClick={() => setObjects(prev => prev.filter(o => o.id !== selectedImageObj.id))}
+              className={`p-1.5 rounded-lg text-red-500 ${isDarkMode ? 'hover:bg-red-900/30' : 'hover:bg-red-100'}`}
+              title="Удалить"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </div>
       )}
 
       {/* Left Toolbar */}
       <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 pointer-events-auto">
-        <div className={`flex flex-col gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80' : 'bg-white/80'}`}>
+        <div className={`flex flex-col gap-1.5 p-1.5 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80' : 'bg-white/80'}`}>
           <button
             onClick={() => setActiveTool('select')}
-            className={`p-3 rounded-xl transition-all duration-200 ${
+            className={`p-2.5 rounded-xl transition-all duration-200 ${
               activeTool === 'select'
                 ? (isDarkMode ? 'bg-neutral-700 text-blue-400' : 'bg-neutral-200 text-blue-600')
                 : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900')
             }`}
             title="Выделение"
           >
-            <MousePointer2 size={24} />
+            <MousePointer2 size={20} />
           </button>
           <button
             onClick={() => setActiveTool('text')}
-            className={`p-3 rounded-xl transition-all duration-200 ${
+            className={`p-2.5 rounded-xl transition-all duration-200 ${
               activeTool === 'text'
                 ? (isDarkMode ? 'bg-neutral-700 text-blue-400' : 'bg-neutral-200 text-blue-600')
                 : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900')
             }`}
             title="Текст"
           >
-            <Type size={24} />
+            <Type size={20} />
           </button>
         </div>
       </div>
 
-      {/* Bottom Left Add Button */}
-      <div className="absolute left-4 bottom-4 pointer-events-auto flex gap-2">
+      {/* Bottom AI Prompt & Upload */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 w-[40%] min-w-[320px] max-w-[600px] pointer-events-auto">
         <input 
           type="file" 
           ref={fileInputRef} 
@@ -716,15 +930,40 @@ export default function App() {
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className={`p-4 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 ${
+          className={`w-[52px] h-[52px] shrink-0 rounded-2xl border-2 flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 ${
             isDarkMode 
-              ? 'bg-blue-600 hover:bg-blue-500 text-white' 
-              : 'bg-blue-500 hover:bg-blue-600 text-white'
+              ? 'bg-neutral-800 border-neutral-600 text-white hover:bg-neutral-700' 
+              : 'bg-white border-blue-500 text-black hover:bg-blue-50'
           }`}
           title="Добавить картинку"
         >
-          <Plus size={28} />
+          <Plus size={24} />
         </button>
+
+        <form onSubmit={handlePromptSubmit} className="flex-1 relative flex items-center">
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Попросите ИИ что-нибудь сделать..."
+            className={`w-full pl-5 pr-12 py-3.5 rounded-2xl shadow-lg backdrop-blur-md border outline-none transition-all ${
+              isDarkMode 
+                ? 'bg-neutral-800/90 border-neutral-700 text-white placeholder:text-neutral-400 focus:border-blue-500' 
+                : 'bg-white/90 border-neutral-200 text-neutral-900 placeholder:text-neutral-500 focus:border-blue-500'
+            }`}
+          />
+          <button
+            type="submit"
+            className={`absolute right-2 p-2 rounded-xl transition-colors ${
+              prompt.trim() && !isLoading
+                ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                : 'bg-transparent text-neutral-400'
+            }`}
+            disabled={!prompt.trim() || isLoading}
+          >
+            {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+          </button>
+        </form>
       </div>
     </div>
   );
