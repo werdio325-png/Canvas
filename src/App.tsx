@@ -928,7 +928,7 @@ Req: ${currentPrompt}`;
       
       <div className="absolute top-4 left-4 right-4 text-center pointer-events-none flex justify-between items-start">
         <div className="flex-1" />
-        <div className={`transition-opacity duration-1000 ${showInstruction ? 'opacity-100' : 'opacity-0'} inline-block px-4 py-2 rounded-full text-sm backdrop-blur-sm shadow-lg transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80 text-neutral-200' : 'bg-neutral-800/80 text-white'}`}>
+        <div className={`transition-opacity duration-1000 ${showInstruction ? 'opacity-100' : 'opacity-0'} inline-block px-4 py-2 rounded-full text-sm backdrop-blur-md shadow-lg border transition-colors duration-300 ${isDarkMode ? 'bg-neutral-900/50 border-white/10 text-neutral-200' : 'bg-white/50 border-white/40 text-neutral-800'}`}>
           Используйте два пальца или колесико мыши для перемещения и масштабирования
         </div>
         <div className="flex-1 flex justify-end pointer-events-auto gap-2">
@@ -941,10 +941,10 @@ Req: ${currentPrompt}`;
           />
           <button
             onClick={() => fileInputLoadRef.current?.click()}
-            className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
+            className={`p-3 rounded-full shadow-lg backdrop-blur-md border transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
               isDarkMode 
-                ? 'bg-neutral-800/80 text-white hover:bg-neutral-700/80' 
-                : 'bg-white/80 text-neutral-700 hover:bg-white'
+                ? 'bg-neutral-900/50 border-white/10 text-white hover:bg-neutral-800/60' 
+                : 'bg-white/50 border-white/40 text-neutral-700 hover:bg-white/70'
             }`}
             title="Загрузить холст"
           >
@@ -953,10 +953,10 @@ Req: ${currentPrompt}`;
           </button>
           <button
             onClick={handleDownloadCanvas}
-            className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
+            className={`p-3 rounded-full shadow-lg backdrop-blur-md border transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
               isDarkMode 
-                ? 'bg-neutral-800/80 text-white hover:bg-neutral-700/80' 
-                : 'bg-white/80 text-neutral-700 hover:bg-white'
+                ? 'bg-neutral-900/50 border-white/10 text-white hover:bg-neutral-800/60' 
+                : 'bg-white/50 border-white/40 text-neutral-700 hover:bg-white/70'
             }`}
             title="Скачать холст"
           >
@@ -965,10 +965,10 @@ Req: ${currentPrompt}`;
           </button>
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 ${
+            className={`p-3 rounded-full shadow-lg backdrop-blur-md border transition-all duration-300 hover:scale-105 active:scale-95 ${
               isDarkMode 
-                ? 'bg-neutral-800/80 text-white hover:bg-neutral-700/80' 
-                : 'bg-white/80 text-neutral-700 hover:bg-white'
+                ? 'bg-neutral-900/50 border-white/10 text-white hover:bg-neutral-800/60' 
+                : 'bg-white/50 border-white/40 text-neutral-700 hover:bg-white/70'
             }`}
             aria-label="Toggle dark mode"
           >
@@ -980,14 +980,14 @@ Req: ${currentPrompt}`;
       {/* Top Formatting Toolbar for Text */}
       {selectedTextObj && (
         <div 
-          className={`absolute pointer-events-auto flex items-center gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/90 border border-neutral-700' : 'bg-white/90 border border-neutral-200'}`}
+          className={`absolute pointer-events-auto flex items-center gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-md border transition-colors duration-300 ${isDarkMode ? 'bg-neutral-900/60 border-white/10' : 'bg-white/60 border-white/40'}`}
           style={getToolbarStyle(selectedTextObj)}
         >
           {/* Edit Button */}
-          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'}`}>
             <button
               onClick={() => setEditingObjectId(selectedTextObj.id)}
-              className={`p-1.5 rounded-lg ${editingObjectId === selectedTextObj.id ? 'bg-blue-500 text-white' : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}
+              className={`p-1.5 rounded-lg ${editingObjectId === selectedTextObj.id ? 'bg-blue-500 text-white' : (isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700')}`}
               title="Редактировать текст"
             >
               <Edit2 size={18} />
@@ -995,10 +995,10 @@ Req: ${currentPrompt}`;
           </div>
 
           {/* Rich Text Formatting (only active when editing) */}
-          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'} ${editingObjectId !== selectedTextObj.id ? 'opacity-50 pointer-events-none' : ''}`}>
-            <button onMouseDown={(e) => applyTextFormat(e, 'bold')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}><Bold size={18} /></button>
-            <button onMouseDown={(e) => applyTextFormat(e, 'italic')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}><Italic size={18} /></button>
-            <button onMouseDown={(e) => applyTextFormat(e, 'underline')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}><Underline size={18} /></button>
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'} ${editingObjectId !== selectedTextObj.id ? 'opacity-50 pointer-events-none' : ''}`}>
+            <button onMouseDown={(e) => applyTextFormat(e, 'bold')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700'}`}><Bold size={18} /></button>
+            <button onMouseDown={(e) => applyTextFormat(e, 'italic')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700'}`}><Italic size={18} /></button>
+            <button onMouseDown={(e) => applyTextFormat(e, 'underline')} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700'}`}><Underline size={18} /></button>
             
             {/* Inline Color Picker */}
             <div className="relative ml-1 flex items-center">
@@ -1009,7 +1009,7 @@ Req: ${currentPrompt}`;
                 title="Цвет выделенного текста"
               />
               {showTextColorPicker && (
-                <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-800 border border-neutral-700' : 'bg-white border border-neutral-200'}`}>
+                <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl backdrop-blur-md border flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-900/60 border-white/10' : 'bg-white/60 border-white/40'}`}>
                   {COLORS.map(c => (
                     <button
                       key={c}
@@ -1028,20 +1028,20 @@ Req: ${currentPrompt}`;
           </div>
 
           {/* Block Formatting */}
-          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
-            <button onClick={() => updateSelectedText({ fontSize: Math.max(8, (selectedTextObj.fontSize || 16) - 2) })} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}>-</button>
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'}`}>
+            <button onClick={() => updateSelectedText({ fontSize: Math.max(8, (selectedTextObj.fontSize || 16) - 2) })} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700'}`}>-</button>
             <span className={`w-8 text-center text-sm font-medium ${isDarkMode ? 'text-neutral-200' : 'text-neutral-700'}`}>{selectedTextObj.fontSize || 16}</span>
-            <button onClick={() => updateSelectedText({ fontSize: Math.min(120, (selectedTextObj.fontSize || 16) + 2) })} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700'}`}>+</button>
+            <button onClick={() => updateSelectedText({ fontSize: Math.min(120, (selectedTextObj.fontSize || 16) + 2) })} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700'}`}>+</button>
           </div>
           
-          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
-            <button onClick={() => updateSelectedText({ textAlign: 'left' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'left' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}><AlignLeft size={18} /></button>
-            <button onClick={() => updateSelectedText({ textAlign: 'center' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'center' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}><AlignCenter size={18} /></button>
-            <button onClick={() => updateSelectedText({ textAlign: 'right' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'right' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}><AlignRight size={18} /></button>
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'}`}>
+            <button onClick={() => updateSelectedText({ textAlign: 'left' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'left' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100/50 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700')}`}><AlignLeft size={18} /></button>
+            <button onClick={() => updateSelectedText({ textAlign: 'center' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'center' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100/50 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700')}`}><AlignCenter size={18} /></button>
+            <button onClick={() => updateSelectedText({ textAlign: 'right' })} className={`p-1.5 rounded-lg ${selectedTextObj.textAlign === 'right' ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100/50 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700/50 text-neutral-200' : 'hover:bg-neutral-200/50 text-neutral-700')}`}><AlignRight size={18} /></button>
           </div>
 
           {/* Block Color Picker */}
-          <div className={`flex items-center px-2 border-r relative ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
+          <div className={`flex items-center px-2 border-r relative ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'}`}>
             <button
               onClick={() => { setShowBlockColorPicker(!showBlockColorPicker); setShowTextColorPicker(false); }}
               className="w-6 h-6 rounded-full border-2 border-neutral-300 dark:border-neutral-600"
@@ -1049,7 +1049,7 @@ Req: ${currentPrompt}`;
               title="Цвет всего блока"
             />
             {showBlockColorPicker && (
-              <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-800 border border-neutral-700' : 'bg-white border border-neutral-200'}`}>
+              <div className={`absolute top-full mt-2 left-0 p-2 rounded-xl shadow-xl backdrop-blur-md border flex gap-1 z-50 ${isDarkMode ? 'bg-neutral-900/60 border-white/10' : 'bg-white/60 border-white/40'}`}>
                 {COLORS.map(c => (
                   <button
                     key={c}
@@ -1081,10 +1081,10 @@ Req: ${currentPrompt}`;
       {/* Top Formatting Toolbar for Image */}
       {selectedImageObj && (
         <div 
-          className={`absolute pointer-events-auto flex items-center gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/90 border border-neutral-700' : 'bg-white/90 border border-neutral-200'}`}
+          className={`absolute pointer-events-auto flex items-center gap-2 p-2 rounded-2xl shadow-lg backdrop-blur-md border transition-colors duration-300 ${isDarkMode ? 'bg-neutral-900/60 border-white/10' : 'bg-white/60 border-white/40'}`}
           style={getToolbarStyle(selectedImageObj)}
         >
-          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600' : 'border-neutral-300'}`}>
+          <div className={`flex items-center gap-1 px-2 border-r ${isDarkMode ? 'border-neutral-600/50' : 'border-neutral-300/50'}`}>
             <button
               onClick={() => updateSelectedImage({ borderRadius: 0 })}
               className={`p-1.5 rounded-lg ${selectedImageObj.borderRadius === 0 || !selectedImageObj.borderRadius ? (isDarkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600') : (isDarkMode ? 'hover:bg-neutral-700 text-neutral-200' : 'hover:bg-neutral-200 text-neutral-700')}`}
@@ -1123,13 +1123,13 @@ Req: ${currentPrompt}`;
 
       {/* Left Toolbar */}
       <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 pointer-events-auto">
-        <div className={`flex flex-col gap-1.5 p-1.5 rounded-2xl shadow-lg backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80' : 'bg-white/80'}`}>
+        <div className={`flex flex-col gap-1.5 p-1.5 rounded-2xl shadow-lg backdrop-blur-md border transition-colors duration-300 ${isDarkMode ? 'bg-neutral-900/50 border-white/10' : 'bg-white/50 border-white/40'}`}>
           <button
             onClick={() => setActiveTool('select')}
             className={`p-2.5 rounded-xl transition-all duration-200 ${
               activeTool === 'select'
-                ? (isDarkMode ? 'bg-neutral-700 text-blue-400' : 'bg-neutral-200 text-blue-600')
-                : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900')
+                ? (isDarkMode ? 'bg-neutral-700/80 text-blue-400' : 'bg-white/80 text-blue-600 shadow-sm')
+                : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-white/50 hover:text-neutral-900')
             }`}
             title="Выделение"
           >
@@ -1139,8 +1139,8 @@ Req: ${currentPrompt}`;
             onClick={() => setActiveTool('text')}
             className={`p-2.5 rounded-xl transition-all duration-200 ${
               activeTool === 'text'
-                ? (isDarkMode ? 'bg-neutral-700 text-blue-400' : 'bg-neutral-200 text-blue-600')
-                : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900')
+                ? (isDarkMode ? 'bg-neutral-700/80 text-blue-400' : 'bg-white/80 text-blue-600 shadow-sm')
+                : (isDarkMode ? 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200' : 'text-neutral-600 hover:bg-white/50 hover:text-neutral-900')
             }`}
             title="Текст"
           >
@@ -1160,10 +1160,10 @@ Req: ${currentPrompt}`;
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className={`w-[52px] h-[52px] shrink-0 rounded-2xl border-2 flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 ${
+          className={`w-[52px] h-[52px] shrink-0 rounded-2xl border flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 ${
             isDarkMode 
-              ? 'bg-neutral-800 border-neutral-600 text-white hover:bg-neutral-700' 
-              : 'bg-white border-blue-500 text-black hover:bg-blue-50'
+              ? 'bg-neutral-900/50 border-white/10 text-white hover:bg-neutral-800/60' 
+              : 'bg-white/50 border-white/40 text-black hover:bg-white/70'
           }`}
           title="Добавить картинку"
         >
@@ -1178,8 +1178,8 @@ Req: ${currentPrompt}`;
             placeholder="Попросите ИИ что-нибудь сделать..."
             className={`w-full pl-5 pr-12 py-3.5 rounded-2xl shadow-lg backdrop-blur-md border outline-none transition-all ${
               isDarkMode 
-                ? 'bg-neutral-800/90 border-neutral-700 text-white placeholder:text-neutral-400 focus:border-blue-500' 
-                : 'bg-white/90 border-neutral-200 text-neutral-900 placeholder:text-neutral-500 focus:border-blue-500'
+                ? 'bg-neutral-900/50 border-white/10 text-white placeholder:text-neutral-400 focus:border-blue-500/50' 
+                : 'bg-white/50 border-white/40 text-neutral-900 placeholder:text-neutral-500 focus:border-blue-500/50'
             }`}
           />
           <button
@@ -1200,8 +1200,8 @@ Req: ${currentPrompt}`;
       <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none ${
         isLoading && aiStatus ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
       }`}>
-        <div className={`px-4 py-2 rounded-full shadow-lg backdrop-blur-md flex items-center gap-3 ${
-          isDarkMode ? 'bg-neutral-800/90 text-neutral-200 border border-neutral-700' : 'bg-white/90 text-neutral-800 border border-neutral-200'
+        <div className={`px-4 py-2 rounded-full shadow-lg backdrop-blur-md border flex items-center gap-3 ${
+          isDarkMode ? 'bg-neutral-900/60 text-neutral-200 border-white/10' : 'bg-white/60 text-neutral-800 border-white/40'
         }`}>
           <Loader2 size={16} className="animate-spin text-blue-500" />
           <span className="text-sm font-medium">{aiStatus}</span>
