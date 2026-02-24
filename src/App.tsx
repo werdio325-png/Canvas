@@ -25,6 +25,15 @@ export interface CanvasObject {
   borderRadius?: number;
 }
 
+
+interface PointerMoveSnapshot {
+  clientX: number;
+  clientY: number;
+  movementX: number;
+  movementY: number;
+  target: HTMLDivElement;
+}
+
 // Extend Window interface for our future AI API
 declare global {
   interface Window {
@@ -52,7 +61,7 @@ export default function App() {
   const [isPanning, setIsPanning] = useState(false);
   const isPanningRef = useRef(false);
   const interactionRectRef = useRef<DOMRect | null>(null);
-  const latestPointerEventRef = useRef<React.PointerEvent<HTMLDivElement> | null>(null);
+  const latestPointerEventRef = useRef<PointerMoveSnapshot | null>(null);
   const moveFrameRef = useRef<number | null>(null);
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBlockColorPicker, setShowBlockColorPicker] = useState(false);
@@ -392,7 +401,7 @@ Rules:
     }
   };
 
-  const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const processPointerMove = useCallback((e: PointerMoveSnapshot) => {
     if (isPinchingRef.current) return;
 
     if (isPanningRef.current) {
@@ -405,7 +414,7 @@ Rules:
       return;
     }
 
-    const rect = interactionRectRef.current ?? e.currentTarget.getBoundingClientRect();
+    const rect = interactionRectRef.current ?? e.target.getBoundingClientRect();
     const x = (e.clientX - rect.left) / transform.scale;
     const y = (e.clientY - rect.top) / transform.scale;
 
@@ -471,7 +480,14 @@ Rules:
   }, [activeTool, dragContext, isSelecting, objects.length, resizingObject, selectionBox, transform.scale]);
 
   const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    latestPointerEventRef.current = e;
+    latestPointerEventRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      movementX: e.movementX,
+      movementY: e.movementY,
+      target: e.currentTarget,
+    };
+
     if (moveFrameRef.current !== null) return;
 
     moveFrameRef.current = window.requestAnimationFrame(() => {
