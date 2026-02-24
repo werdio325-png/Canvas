@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2, Download, Upload } from 'lucide-react';
 import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
 
@@ -52,7 +52,8 @@ export default function App() {
   const [isPanning, setIsPanning] = useState(false);
   const isPanningRef = useRef(false);
   const interactionRectRef = useRef<DOMRect | null>(null);
-  const lastMoveUpdateRef = useRef(0);
+  const latestPointerEventRef = useRef<React.PointerEvent<HTMLDivElement> | null>(null);
+  const moveFrameRef = useRef<number | null>(null);
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBlockColorPicker, setShowBlockColorPicker] = useState(false);
   const [showInstruction, setShowInstruction] = useState(true);
@@ -338,7 +339,6 @@ Rules:
     isPanningRef.current = isPanning;
   }, [isPanning]);
 
-
   // Mouse event handlers for the canvas (for tools)
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (showTextColorPicker) setShowTextColorPicker(false);
@@ -350,7 +350,6 @@ Rules:
     if (e.button === 1) {
       e.preventDefault();
       setIsPanning(true);
-      lastMoveUpdateRef.current = 0;
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
@@ -393,12 +392,8 @@ Rules:
     }
   };
 
-  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (isPinchingRef.current) return;
-
-    const now = performance.now();
-    if (now - lastMoveUpdateRef.current < 16) return;
-    lastMoveUpdateRef.current = now;
 
     if (isPanningRef.current) {
       if (e.movementX === 0 && e.movementY === 0) return;
@@ -418,7 +413,7 @@ Rules:
     if (resizingObject) {
       const dx = (e.clientX - resizingObject.startX) / transform.scale;
       const dy = (e.clientY - resizingObject.startY) / transform.scale;
-      
+
       setObjects(prev => prev.map(obj => {
         if (obj.id === resizingObject.id) {
           if (resizingObject.type === 'text') {
@@ -438,7 +433,8 @@ Rules:
     if (dragContext && activeTool === 'select') {
       const dx = x - dragContext.startX;
       const dy = y - dragContext.startY;
-      setObjects(prev => prev.map(obj => 
+      if (dx === 0 && dy === 0) return;
+      setObjects(prev => prev.map(obj =>
         dragContext.initialPositions[obj.id]
           ? { ...obj, x: dragContext.initialPositions[obj.id].x + dx, y: dragContext.initialPositions[obj.id].y + dy }
           : obj
@@ -450,7 +446,7 @@ Rules:
     if (!isSelecting || !selectionBox || activeTool !== 'select') return;
 
     setSelectionBox(prev => prev ? { ...prev, endX: x, endY: y } : null);
-    
+
     // Select objects within the box
     if (objects.length === 0) return;
     const minX = Math.min(selectionBox.startX, x);
@@ -472,7 +468,20 @@ Rules:
 
       return changed ? next : prev;
     });
+  }, [activeTool, dragContext, isSelecting, objects.length, resizingObject, selectionBox, transform.scale]);
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    latestPointerEventRef.current = e;
+    if (moveFrameRef.current !== null) return;
+
+    moveFrameRef.current = window.requestAnimationFrame(() => {
+      const latest = latestPointerEventRef.current;
+      moveFrameRef.current = null;
+      if (!latest) return;
+      processPointerMove(latest);
+    });
   };
+
 
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isPanning) {
@@ -491,7 +500,11 @@ Rules:
       setResizingObject(null);
     }
     interactionRectRef.current = null;
-    lastMoveUpdateRef.current = 0;
+    latestPointerEventRef.current = null;
+    if (moveFrameRef.current !== null) {
+      window.cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = null;
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
