@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2, Download, Upload } from 'lucide-react';
 import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
 
 export type CanvasObjectType = 'text' | 'image';
@@ -55,8 +55,124 @@ export default function App() {
   const [showInstruction, setShowInstruction] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+
+  const chatRef = useRef<any>(null);
+  const sentImagesRef = useRef<Set<string>>(new Set());
+  const fileInputLoadRef = useRef<HTMLInputElement>(null);
 
   const COLORS = ['#ffffff', '#171717', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
+
+  // Initialize AI Chat
+  useEffect(() => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    const modifyCanvasDeclaration: FunctionDeclaration = {
+      name: "modifyCanvas",
+      description: "Modifies the canvas by adding, updating, or deleting text objects.",
+      parameters: {
+        type: GenAIType.OBJECT,
+        properties: {
+          add: {
+            type: GenAIType.ARRAY,
+            description: "List of new objects to add to the canvas.",
+            items: {
+              type: GenAIType.OBJECT,
+              properties: {
+                type: { type: GenAIType.STRING, description: "'text' or 'image'" },
+                x: { type: GenAIType.NUMBER },
+                y: { type: GenAIType.NUMBER },
+                width: { type: GenAIType.NUMBER },
+                height: { type: GenAIType.NUMBER },
+                content: { type: GenAIType.STRING, description: "Text content (HTML allowed)" },
+                color: { type: GenAIType.STRING, description: "Hex color code" },
+                fontSize: { type: GenAIType.NUMBER },
+                textAlign: { type: GenAIType.STRING, description: "'left', 'center', or 'right'" }
+              },
+              required: ["type", "x", "y", "width", "height"]
+            }
+          },
+          update: {
+            type: GenAIType.ARRAY,
+            description: "List of objects to update.",
+            items: {
+              type: GenAIType.OBJECT,
+              properties: {
+                id: { type: GenAIType.STRING },
+                x: { type: GenAIType.NUMBER },
+                y: { type: GenAIType.NUMBER },
+                width: { type: GenAIType.NUMBER },
+                height: { type: GenAIType.NUMBER },
+                content: { type: GenAIType.STRING },
+                color: { type: GenAIType.STRING },
+                fontSize: { type: GenAIType.NUMBER },
+                textAlign: { type: GenAIType.STRING }
+              },
+              required: ["id"]
+            }
+          },
+          delete: {
+            type: GenAIType.ARRAY,
+            description: "List of object IDs to delete.",
+            items: {
+              type: GenAIType.STRING
+            }
+          }
+        }
+      }
+    };
+
+    const generateImageDeclaration: FunctionDeclaration = {
+      name: "generateImage",
+      description: "Generates a new image based on a text prompt and adds it to the canvas. Use this when the user asks to draw, create, or generate an image.",
+      parameters: {
+        type: GenAIType.OBJECT,
+        properties: {
+          prompt: {
+            type: GenAIType.STRING,
+            description: "A highly detailed prompt for the image generation model. Include style, subject, lighting, etc. based on the user's request and canvas context."
+          }
+        },
+        required: ["prompt"]
+      }
+    };
+
+    const editImageDeclaration: FunctionDeclaration = {
+      name: "editImage",
+      description: "Edits existing images on the canvas based on a text prompt. Creates a new image as a result. Use this when the user asks to change, modify, or edit specific images.",
+      parameters: {
+        type: GenAIType.OBJECT,
+        properties: {
+          prompt: {
+            type: GenAIType.STRING,
+            description: "A detailed prompt describing how to edit the images."
+          },
+          imageIds: {
+            type: GenAIType.ARRAY,
+            items: { type: GenAIType.STRING },
+            description: "List of image IDs from the canvas to be used as reference/source for the edit."
+          }
+        },
+        required: ["prompt", "imageIds"]
+      }
+    };
+
+    chatRef.current = ai.chats.create({
+      model: "gemini-3-flash-preview",
+      config: {
+        systemInstruction: `You are a canvas layout AI for brainstorming.
+Canvas size: 2400x1800. Center: (1200, 900).
+Rules:
+1. MAXIMALLY COMPACT: Group all generated objects as tightly as possible in the center of the canvas. Do not spread them out.
+2. STRICTLY NO OVERLAP: Calculate the bounding boxes (x, y, width, height) of all existing and new objects. Ensure NO objects overlap. Leave a small gap (e.g., 10-20px) between them.
+3. Layout items logically in a dense grid, list, or mind-map structure around the center.
+4. Use reasonable defaults for text (width: 200, height: 60, fontSize: 20).
+5. You can modify the canvas (modifyCanvas), generate new images (generateImage), or edit existing images (editImage). Output the appropriate tool call based on the user's request.`,
+        tools: [{ functionDeclarations: [modifyCanvasDeclaration, generateImageDeclaration, editImageDeclaration] }],
+        temperature: 0.1,
+      }
+    });
+  }, []);
 
   // Auto-hide instruction
   useEffect(() => {
@@ -426,123 +542,173 @@ export default function App() {
 
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || isLoading) return;
+    if (!prompt.trim() || isLoading || !chatRef.current) return;
     
     setIsLoading(true);
+    setAiStatus('Подготовка контекста...');
     const currentPrompt = prompt;
     setPrompt('');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const messageParts: any[] = [];
       
-      const modifyCanvasDeclaration: FunctionDeclaration = {
-        name: "modifyCanvas",
-        description: "Modifies the canvas by adding, updating, or deleting objects. The canvas has a coordinate system from x: 0 to 2400 and y: 0 to 1800. The center is around x: 1200, y: 900.",
-        parameters: {
-          type: GenAIType.OBJECT,
-          properties: {
-            add: {
-              type: GenAIType.ARRAY,
-              description: "List of new objects to add to the canvas.",
-              items: {
-                type: GenAIType.OBJECT,
-                properties: {
-                  type: { type: GenAIType.STRING, description: "'text' or 'image'" },
-                  x: { type: GenAIType.NUMBER },
-                  y: { type: GenAIType.NUMBER },
-                  width: { type: GenAIType.NUMBER },
-                  height: { type: GenAIType.NUMBER },
-                  content: { type: GenAIType.STRING, description: "Text content (HTML allowed)" },
-                  color: { type: GenAIType.STRING, description: "Hex color code" },
-                  fontSize: { type: GenAIType.NUMBER },
-                  textAlign: { type: GenAIType.STRING, description: "'left', 'center', or 'right'" }
-                },
-                required: ["type", "x", "y", "width", "height"]
-              }
-            },
-            update: {
-              type: GenAIType.ARRAY,
-              description: "List of objects to update.",
-              items: {
-                type: GenAIType.OBJECT,
-                properties: {
-                  id: { type: GenAIType.STRING },
-                  x: { type: GenAIType.NUMBER },
-                  y: { type: GenAIType.NUMBER },
-                  width: { type: GenAIType.NUMBER },
-                  height: { type: GenAIType.NUMBER },
-                  content: { type: GenAIType.STRING },
-                  color: { type: GenAIType.STRING },
-                  fontSize: { type: GenAIType.NUMBER },
-                  textAlign: { type: GenAIType.STRING }
-                },
-                required: ["id"]
-              }
-            },
-            delete: {
-              type: GenAIType.ARRAY,
-              description: "List of object IDs to delete.",
-              items: {
-                type: GenAIType.STRING
-              }
+      // Find new images
+      const currentImages = objects.filter(o => o.type === 'image' && o.src);
+      const newImages = currentImages.filter(o => !sentImagesRef.current.has(o.id));
+      
+      newImages.forEach(img => {
+        if (img.src) {
+          const [prefix, base64Data] = img.src.split(',');
+          const mimeType = prefix.split(';')[0].split(':')[1];
+          messageParts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType
             }
-          }
+          });
+          messageParts.push({ text: `[Image ID: ${img.id} attached above]` });
+          sentImagesRef.current.add(img.id);
         }
-      };
-
-      const systemInstruction = `You are an AI assistant integrated into a canvas editor. 
-You can modify the canvas based on the user's request.
-The canvas is 2400x1800. The center is at x: 1200, y: 900.
-Current canvas objects:
-${JSON.stringify(objects, null, 2)}
-
-When adding text, use reasonable defaults like width: 300, height: 100, fontSize: 32, color: '${isDarkMode ? '#ffffff' : '#000000'}'.
-Always use the modifyCanvas tool to apply changes.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: currentPrompt,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: [modifyCanvasDeclaration] }],
-          temperature: 0.2,
-        },
       });
+
+      const stateContext = `Canvas state:
+${JSON.stringify(objects.map(o => ({
+  id: o.id, type: o.type, x: Math.round(o.x), y: Math.round(o.y), 
+  w: Math.round(o.width), h: Math.round(o.height), 
+  c: o.content ? o.content.substring(0, 50) : undefined
+}))) }
+
+Req: ${currentPrompt}`;
+
+      messageParts.push({ text: stateContext });
+
+      setAiStatus('Ожидание ответа от ИИ...');
+      const response = await chatRef.current.sendMessage({ message: messageParts });
 
       const functionCalls = response.functionCalls;
       if (functionCalls && functionCalls.length > 0) {
-        const call = functionCalls[0];
-        if (call.name === 'modifyCanvas') {
-          const args = call.args as any;
-          
-          setObjects(prev => {
-            let next = [...prev];
+        for (const call of functionCalls) {
+          if (call.name === 'modifyCanvas') {
+            setAiStatus('Обновление объектов на холсте...');
+            const args = call.args as any;
             
-            if (args.delete && Array.isArray(args.delete)) {
-              next = next.filter(o => !args.delete.includes(o.id));
-            }
-            
-            if (args.update && Array.isArray(args.update)) {
-              args.update.forEach((u: any) => {
-                const idx = next.findIndex(o => o.id === u.id);
-                if (idx !== -1) {
-                  next[idx] = { ...next[idx], ...u };
-                }
-              });
-            }
-            
-            if (args.add && Array.isArray(args.add)) {
-              args.add.forEach((a: any) => {
-                next.push({
-                  ...a,
-                  id: `${a.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                  isSelected: false
+            setObjects(prev => {
+              let next = [...prev];
+              
+              if (args.delete && Array.isArray(args.delete)) {
+                next = next.filter(o => !args.delete.includes(o.id));
+              }
+              
+              if (args.update && Array.isArray(args.update)) {
+                args.update.forEach((u: any) => {
+                  const idx = next.findIndex(o => o.id === u.id);
+                  if (idx !== -1) {
+                    next[idx] = { ...next[idx], ...u };
+                  }
                 });
+              }
+              
+              if (args.add && Array.isArray(args.add)) {
+                args.add.forEach((a: any) => {
+                  next.push({
+                    ...a,
+                    id: `${a.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    isSelected: false
+                  });
+                });
+              }
+              
+              return next;
+            });
+          } else if (call.name === 'generateImage') {
+            setAiStatus('Генерация изображения (это может занять некоторое время)...');
+            const args = call.args as any;
+            try {
+              const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+              const imgResponse = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: { parts: [{ text: args.prompt }] }
               });
+              
+              let base64Image = '';
+              for (const part of imgResponse.candidates?.[0]?.content?.parts || []) {
+                if (part.inlineData) {
+                  base64Image = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                  break;
+                }
+              }
+              
+              if (base64Image) {
+                setObjects(prev => [...prev, {
+                  id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  type: 'image',
+                  x: 1200 - 256 + Math.random() * 100,
+                  y: 900 - 256 + Math.random() * 100,
+                  width: 512,
+                  height: 512,
+                  src: base64Image,
+                  isSelected: false
+                }]);
+              }
+            } catch (err) {
+              console.error("Image generation error:", err);
+              alert("Ошибка при генерации изображения.");
             }
-            
-            return next;
-          });
+          } else if (call.name === 'editImage') {
+            setAiStatus('Редактирование изображения (это может занять некоторое время)...');
+            const args = call.args as any;
+            try {
+              const parts: any[] = [];
+              for (const id of args.imageIds) {
+                const obj = objects.find(o => o.id === id);
+                if (obj && obj.type === 'image' && obj.src) {
+                  const [prefix, data] = obj.src.split(',');
+                  const mimeType = prefix.split(';')[0].split(':')[1];
+                  parts.push({
+                    inlineData: {
+                      data: data,
+                      mimeType: mimeType
+                    }
+                  });
+                }
+              }
+              
+              if (parts.length > 0) {
+                parts.push({ text: args.prompt });
+                const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+                const imgResponse = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash-image',
+                  contents: { parts }
+                });
+                
+                let base64Image = '';
+                for (const part of imgResponse.candidates?.[0]?.content?.parts || []) {
+                  if (part.inlineData) {
+                    base64Image = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    break;
+                  }
+                }
+                
+                if (base64Image) {
+                  setObjects(prev => [...prev, {
+                    id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'image',
+                    x: 1200 - 256 + Math.random() * 100,
+                    y: 900 - 256 + Math.random() * 100,
+                    width: 512,
+                    height: 512,
+                    src: base64Image,
+                    isSelected: false
+                  }]);
+                }
+              } else {
+                alert("Не удалось найти изображения для редактирования.");
+              }
+            } catch (err) {
+              console.error("Image editing error:", err);
+              alert("Ошибка при редактировании изображения.");
+            }
+          }
         }
       }
     } catch (error) {
@@ -550,7 +716,40 @@ Always use the modifyCanvas tool to apply changes.`;
       alert("Ошибка при обращении к ИИ. Проверьте консоль.");
     } finally {
       setIsLoading(false);
+      setAiStatus(null);
     }
+  };
+
+  const handleDownloadCanvas = () => {
+    const dataStr = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(objects));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "brainstorm_canvas.json");
+    document.body.appendChild(downloadAnchorNode); // required for firefox
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const handleUploadCanvas = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = event.target?.result as string;
+        const parsed = JSON.parse(json);
+        if (Array.isArray(parsed)) {
+          setObjects(parsed);
+        } else {
+          alert("Неверный формат файла");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Ошибка при чтении файла");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputLoadRef.current) fileInputLoadRef.current.value = '';
   };
 
   return (
@@ -732,7 +931,38 @@ Always use the modifyCanvas tool to apply changes.`;
         <div className={`transition-opacity duration-1000 ${showInstruction ? 'opacity-100' : 'opacity-0'} inline-block px-4 py-2 rounded-full text-sm backdrop-blur-sm shadow-lg transition-colors duration-300 ${isDarkMode ? 'bg-neutral-800/80 text-neutral-200' : 'bg-neutral-800/80 text-white'}`}>
           Используйте два пальца или колесико мыши для перемещения и масштабирования
         </div>
-        <div className="flex-1 flex justify-end pointer-events-auto">
+        <div className="flex-1 flex justify-end pointer-events-auto gap-2">
+          <input 
+            type="file" 
+            accept="*/*" 
+            className="hidden" 
+            ref={fileInputLoadRef} 
+            onChange={handleUploadCanvas} 
+          />
+          <button
+            onClick={() => fileInputLoadRef.current?.click()}
+            className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
+              isDarkMode 
+                ? 'bg-neutral-800/80 text-white hover:bg-neutral-700/80' 
+                : 'bg-white/80 text-neutral-700 hover:bg-white'
+            }`}
+            title="Загрузить холст"
+          >
+            <Upload size={24} />
+            <span className="text-sm font-medium hidden sm:inline">Загрузить</span>
+          </button>
+          <button
+            onClick={handleDownloadCanvas}
+            className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-2 ${
+              isDarkMode 
+                ? 'bg-neutral-800/80 text-white hover:bg-neutral-700/80' 
+                : 'bg-white/80 text-neutral-700 hover:bg-white'
+            }`}
+            title="Скачать холст"
+          >
+            <Download size={24} />
+            <span className="text-sm font-medium hidden sm:inline">Скачать</span>
+          </button>
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className={`p-3 rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 ${
@@ -964,6 +1194,18 @@ Always use the modifyCanvas tool to apply changes.`;
             {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
           </button>
         </form>
+      </div>
+      
+      {/* AI Status Overlay */}
+      <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none ${
+        isLoading && aiStatus ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+      }`}>
+        <div className={`px-4 py-2 rounded-full shadow-lg backdrop-blur-md flex items-center gap-3 ${
+          isDarkMode ? 'bg-neutral-800/90 text-neutral-200 border border-neutral-700' : 'bg-white/90 text-neutral-800 border border-neutral-200'
+        }`}>
+          <Loader2 size={16} className="animate-spin text-blue-500" />
+          <span className="text-sm font-medium">{aiStatus}</span>
+        </div>
       </div>
     </div>
   );
