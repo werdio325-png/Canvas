@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2, Download, Upload } from 'lucide-react';
 import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
 
@@ -62,6 +62,17 @@ export default function App() {
   const fileInputLoadRef = useRef<HTMLInputElement>(null);
 
   const COLORS = ['#ffffff', '#171717', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
+
+  const clearSelection = (items: CanvasObject[]) => {
+    let changed = false;
+    const nextItems = items.map((obj) => {
+      if (!obj.isSelected) return obj;
+      changed = true;
+      return { ...obj, isSelected: false };
+    });
+
+    return changed ? nextItems : items;
+  };
 
   // Initialize AI Chat
   useEffect(() => {
@@ -352,7 +363,7 @@ Rules:
       setSelectionBox({ startX: x, startY: y, endX: x, endY: y });
       
       // Deselect all objects if clicking on empty space
-      setObjects(prev => prev.map(obj => ({ ...obj, isSelected: false })));
+      setObjects(prev => clearSelection(prev));
     } else if (activeTool === 'text') {
       const newText: CanvasObject = {
         id: `text-${Date.now()}`,
@@ -367,7 +378,7 @@ Rules:
         color: isDarkMode ? '#ffffff' : '#000000',
         textAlign: 'left'
       };
-      setObjects(prev => [...prev.map(obj => ({ ...obj, isSelected: false })), newText]);
+      setObjects(prev => [...clearSelection(prev), newText]);
       setActiveTool('select'); // Switch back to select tool after creating
     }
   };
@@ -431,12 +442,20 @@ Rules:
     const minY = Math.min(selectionBox.startY, y);
     const maxY = Math.max(selectionBox.startY, y);
 
-    setObjects(prev => prev.map(obj => {
-      const isInside = 
-        obj.x < maxX && obj.x + obj.width > minX &&
-        obj.y < maxY && obj.y + obj.height > minY;
-      return { ...obj, isSelected: isInside };
-    }));
+    setObjects(prev => {
+      let changed = false;
+      const next = prev.map(obj => {
+        const isInside =
+          obj.x < maxX && obj.x + obj.width > minX &&
+          obj.y < maxY && obj.y + obj.height > minY;
+
+        if (obj.isSelected === isInside) return obj;
+        changed = true;
+        return { ...obj, isSelected: isInside };
+      });
+
+      return changed ? next : prev;
+    });
   };
 
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -486,7 +505,7 @@ Rules:
           src,
           isSelected: true
         };
-        setObjects(prev => [...prev.map(o => ({ ...o, isSelected: false })), newImage]);
+        setObjects(prev => [...clearSelection(prev), newImage]);
         setActiveTool('select');
       };
       img.src = src;
@@ -497,10 +516,16 @@ Rules:
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const selectedTextObjects = objects.filter(obj => obj.isSelected && obj.type === 'text');
+  const selectedTextObjects = useMemo(
+    () => objects.filter(obj => obj.isSelected && obj.type === 'text'),
+    [objects]
+  );
   const selectedTextObj = selectedTextObjects.length === 1 ? selectedTextObjects[0] : null;
 
-  const selectedImageObjects = objects.filter(obj => obj.isSelected && obj.type === 'image');
+  const selectedImageObjects = useMemo(
+    () => objects.filter(obj => obj.isSelected && obj.type === 'image'),
+    [objects]
+  );
   const selectedImageObj = selectedImageObjects.length === 1 ? selectedImageObjects[0] : null;
 
   const updateSelectedText = (updates: Partial<CanvasObject>) => {
