@@ -6,33 +6,16 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2, Download, Upload } from 'lucide-react';
 import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
-
-export type CanvasObjectType = 'text' | 'image';
-
-export interface CanvasObject {
-  id: string;
-  type: CanvasObjectType;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  content?: string;
-  src?: string;
-  isSelected?: boolean;
-  fontSize?: number;
-  color?: string;
-  textAlign?: 'left' | 'center' | 'right';
-  borderRadius?: number;
-}
-
-
-interface PointerMoveSnapshot {
-  clientX: number;
-  clientY: number;
-  movementX: number;
-  movementY: number;
-  target: HTMLDivElement;
-}
+import {
+  CANVAS_CENTER_X,
+  CANVAS_CENTER_Y,
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  COLORS,
+} from './canvas/constants';
+import { clampZoom, getBounds } from './canvas/geometry';
+import { clearSelection, applySelectionByRect } from './canvas/selection';
+import { CanvasObject, PointerMoveSnapshot } from './canvas/types';
 
 // Extend Window interface for our future AI API
 declare global {
@@ -73,19 +56,6 @@ export default function App() {
   const chatRef = useRef<any>(null);
   const sentImagesRef = useRef<Set<string>>(new Set());
   const fileInputLoadRef = useRef<HTMLInputElement>(null);
-
-  const COLORS = ['#ffffff', '#171717', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
-
-  const clearSelection = (items: CanvasObject[]) => {
-    let changed = false;
-    const nextItems = items.map((obj) => {
-      if (!obj.isSelected) return obj;
-      changed = true;
-      return { ...obj, isSelected: false };
-    });
-
-    return changed ? nextItems : items;
-  };
 
   // Initialize AI Chat
   useEffect(() => {
@@ -185,7 +155,7 @@ export default function App() {
       model: "gemini-3-flash-preview",
       config: {
         systemInstruction: `You are a canvas layout AI for brainstorming.
-Canvas size: 2400x1800. Center: (1200, 900).
+Canvas size: ${CANVAS_WIDTH}x${CANVAS_HEIGHT}. Center: (${CANVAS_CENTER_X}, ${CANVAS_CENTER_Y}).
 Rules:
 1. MAXIMALLY COMPACT: Group all generated objects as tightly as possible in the center of the canvas. Do not spread them out.
 2. STRICTLY NO OVERLAP: Calculate the bounding boxes (x, y, width, height) of all existing and new objects. Ensure NO objects overlap. Leave a small gap (e.g., 10-20px) between them.
@@ -234,8 +204,8 @@ Rules:
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setTransform({
-        x: (rect.width - 2400) / 2,
-        y: (rect.height - 1800) / 2,
+        x: (rect.width - CANVAS_WIDTH) / 2,
+        y: (rect.height - CANVAS_HEIGHT) / 2,
         scale: 1
       });
     }
@@ -290,7 +260,7 @@ Rules:
 
         setTransform(prev => {
           let newScale = prev.scale * scaleChange;
-          newScale = Math.max(0.1, Math.min(newScale, 5));
+          newScale = clampZoom(newScale);
           
           const scaleRatio = newScale / prev.scale;
           const newX = currentMidpoint.x - (currentMidpoint.x - (prev.x + dx)) * scaleRatio;
@@ -319,7 +289,7 @@ Rules:
       
       setTransform(prev => {
         let newScale = prev.scale * scaleChange;
-        newScale = Math.max(0.1, Math.min(newScale, 5));
+        newScale = clampZoom(newScale);
         
         const scaleRatio = newScale / prev.scale;
         const newX = e.clientX - (e.clientX - prev.x) * scaleRatio;
@@ -458,25 +428,13 @@ Rules:
 
     // Select objects within the box
     if (objects.length === 0) return;
-    const minX = Math.min(selectionBox.startX, x);
-    const maxX = Math.max(selectionBox.startX, x);
-    const minY = Math.min(selectionBox.startY, y);
-    const maxY = Math.max(selectionBox.startY, y);
-
-    setObjects(prev => {
-      let changed = false;
-      const next = prev.map(obj => {
-        const isInside =
-          obj.x < maxX && obj.x + obj.width > minX &&
-          obj.y < maxY && obj.y + obj.height > minY;
-
-        if (obj.isSelected === isInside) return obj;
-        changed = true;
-        return { ...obj, isSelected: isInside };
-      });
-
-      return changed ? next : prev;
-    });
+    setObjects(prev => applySelectionByRect(
+      prev,
+      selectionBox.startX,
+      selectionBox.startY,
+      x,
+      y
+    ));
   }, [activeTool, dragContext, isSelecting, objects.length, resizingObject, selectionBox, transform.scale]);
 
   const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -545,8 +503,8 @@ Rules:
         const newImage: CanvasObject = {
           id: `img-${Date.now()}`,
           type: 'image',
-          x: 1200 - w / 2, // Center of canvas
-          y: 900 - h / 2,
+          x: CANVAS_CENTER_X - w / 2, // Center of canvas
+          y: CANVAS_CENTER_Y - h / 2,
           width: w,
           height: h,
           src,
@@ -562,6 +520,17 @@ Rules:
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+
+  const selectionBounds = useMemo(() => {
+    if (!selectionBox) return null;
+    return getBounds(
+      selectionBox.startX,
+      selectionBox.startY,
+      selectionBox.endX,
+      selectionBox.endY
+    );
+  }, [selectionBox]);
 
   const selectedTextObjects = useMemo(
     () => objects.filter(obj => obj.isSelected && obj.type === 'text'),
@@ -714,8 +683,8 @@ Req: ${currentPrompt}`;
                 setObjects(prev => [...prev, {
                   id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                   type: 'image',
-                  x: 1200 - 256 + Math.random() * 100,
-                  y: 900 - 256 + Math.random() * 100,
+                  x: CANVAS_CENTER_X - 256 + Math.random() * 100,
+                  y: CANVAS_CENTER_Y - 256 + Math.random() * 100,
                   width: 512,
                   height: 512,
                   src: base64Image,
@@ -765,8 +734,8 @@ Req: ${currentPrompt}`;
                   setObjects(prev => [...prev, {
                     id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                     type: 'image',
-                    x: 1200 - 256 + Math.random() * 100,
-                    y: 900 - 256 + Math.random() * 100,
+                    x: CANVAS_CENTER_X - 256 + Math.random() * 100,
+                    y: CANVAS_CENTER_Y - 256 + Math.random() * 100,
                     width: 512,
                     height: 512,
                     src: base64Image,
@@ -833,8 +802,8 @@ Req: ${currentPrompt}`;
         className="absolute origin-top-left will-change-transform"
         style={{
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-          width: 2400,
-          height: 1800,
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
         }}
       >
         <div 
@@ -847,20 +816,20 @@ Req: ${currentPrompt}`;
         >
           <canvas
             ref={canvasRef}
-            width={2400}
-            height={1800}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
             className="bg-dot-grid block w-full h-full absolute inset-0 pointer-events-none"
           />
           
           {/* Render Selection Box */}
-          {isSelecting && selectionBox && (
+          {isSelecting && selectionBounds && (
             <div
               className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none"
               style={{
-                left: Math.min(selectionBox.startX, selectionBox.endX),
-                top: Math.min(selectionBox.startY, selectionBox.endY),
-                width: Math.abs(selectionBox.endX - selectionBox.startX),
-                height: Math.abs(selectionBox.endY - selectionBox.startY),
+                left: selectionBounds.minX,
+                top: selectionBounds.minY,
+                width: selectionBounds.maxX - selectionBounds.minX,
+                height: selectionBounds.maxY - selectionBounds.minY,
               }}
             />
           )}
