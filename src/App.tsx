@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Moon, Sun, MousePointer2, Type, Plus, Image as ImageIcon, AlignLeft, AlignCenter, AlignRight, Square, Circle, Edit2, Bold, Italic, Underline, Trash2, Sparkles, Loader2, Download, Upload } from 'lucide-react';
 import { GoogleGenAI, Type as GenAIType, FunctionDeclaration } from '@google/genai';
 
@@ -50,6 +50,9 @@ export default function App() {
   const isPinchingRef = useRef(false);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
+  const isPanningRef = useRef(false);
+  const interactionRectRef = useRef<DOMRect | null>(null);
+  const lastMoveUpdateRef = useRef(0);
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBlockColorPicker, setShowBlockColorPicker] = useState(false);
   const [showInstruction, setShowInstruction] = useState(true);
@@ -62,6 +65,17 @@ export default function App() {
   const fileInputLoadRef = useRef<HTMLInputElement>(null);
 
   const COLORS = ['#ffffff', '#171717', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
+
+  const clearSelection = (items: CanvasObject[]) => {
+    let changed = false;
+    const nextItems = items.map((obj) => {
+      if (!obj.isSelected) return obj;
+      changed = true;
+      return { ...obj, isSelected: false };
+    });
+
+    return changed ? nextItems : items;
+  };
 
   // Initialize AI Chat
   useEffect(() => {
@@ -320,6 +334,11 @@ Rules:
     };
   }, []);
 
+  useEffect(() => {
+    isPanningRef.current = isPanning;
+  }, [isPanning]);
+
+
   // Mouse event handlers for the canvas (for tools)
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (showTextColorPicker) setShowTextColorPicker(false);
@@ -331,6 +350,7 @@ Rules:
     if (e.button === 1) {
       e.preventDefault();
       setIsPanning(true);
+      lastMoveUpdateRef.current = 0;
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
@@ -343,6 +363,7 @@ Rules:
     }
 
     const rect = e.currentTarget.getBoundingClientRect();
+    interactionRectRef.current = rect;
     // Calculate coordinates relative to the unscaled canvas
     const x = (e.clientX - rect.left) / transform.scale;
     const y = (e.clientY - rect.top) / transform.scale;
@@ -352,7 +373,7 @@ Rules:
       setSelectionBox({ startX: x, startY: y, endX: x, endY: y });
       
       // Deselect all objects if clicking on empty space
-      setObjects(prev => prev.map(obj => ({ ...obj, isSelected: false })));
+      setObjects(prev => clearSelection(prev));
     } else if (activeTool === 'text') {
       const newText: CanvasObject = {
         id: `text-${Date.now()}`,
@@ -367,7 +388,7 @@ Rules:
         color: isDarkMode ? '#ffffff' : '#000000',
         textAlign: 'left'
       };
-      setObjects(prev => [...prev.map(obj => ({ ...obj, isSelected: false })), newText]);
+      setObjects(prev => [...clearSelection(prev), newText]);
       setActiveTool('select'); // Switch back to select tool after creating
     }
   };
@@ -375,7 +396,12 @@ Rules:
   const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isPinchingRef.current) return;
 
-    if (isPanning) {
+    const now = performance.now();
+    if (now - lastMoveUpdateRef.current < 16) return;
+    lastMoveUpdateRef.current = now;
+
+    if (isPanningRef.current) {
+      if (e.movementX === 0 && e.movementY === 0) return;
       setTransform(prev => ({
         ...prev,
         x: prev.x + e.movementX,
@@ -384,7 +410,7 @@ Rules:
       return;
     }
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = interactionRectRef.current ?? e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / transform.scale;
     const y = (e.clientY - rect.top) / transform.scale;
 
@@ -426,17 +452,26 @@ Rules:
     setSelectionBox(prev => prev ? { ...prev, endX: x, endY: y } : null);
     
     // Select objects within the box
+    if (objects.length === 0) return;
     const minX = Math.min(selectionBox.startX, x);
     const maxX = Math.max(selectionBox.startX, x);
     const minY = Math.min(selectionBox.startY, y);
     const maxY = Math.max(selectionBox.startY, y);
 
-    setObjects(prev => prev.map(obj => {
-      const isInside = 
-        obj.x < maxX && obj.x + obj.width > minX &&
-        obj.y < maxY && obj.y + obj.height > minY;
-      return { ...obj, isSelected: isInside };
-    }));
+    setObjects(prev => {
+      let changed = false;
+      const next = prev.map(obj => {
+        const isInside =
+          obj.x < maxX && obj.x + obj.width > minX &&
+          obj.y < maxY && obj.y + obj.height > minY;
+
+        if (obj.isSelected === isInside) return obj;
+        changed = true;
+        return { ...obj, isSelected: isInside };
+      });
+
+      return changed ? next : prev;
+    });
   };
 
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -455,6 +490,8 @@ Rules:
     if (resizingObject) {
       setResizingObject(null);
     }
+    interactionRectRef.current = null;
+    lastMoveUpdateRef.current = 0;
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -486,7 +523,7 @@ Rules:
           src,
           isSelected: true
         };
-        setObjects(prev => [...prev.map(o => ({ ...o, isSelected: false })), newImage]);
+        setObjects(prev => [...clearSelection(prev), newImage]);
         setActiveTool('select');
       };
       img.src = src;
@@ -497,10 +534,16 @@ Rules:
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const selectedTextObjects = objects.filter(obj => obj.isSelected && obj.type === 'text');
+  const selectedTextObjects = useMemo(
+    () => objects.filter(obj => obj.isSelected && obj.type === 'text'),
+    [objects]
+  );
   const selectedTextObj = selectedTextObjects.length === 1 ? selectedTextObjects[0] : null;
 
-  const selectedImageObjects = objects.filter(obj => obj.isSelected && obj.type === 'image');
+  const selectedImageObjects = useMemo(
+    () => objects.filter(obj => obj.isSelected && obj.type === 'image'),
+    [objects]
+  );
   const selectedImageObj = selectedImageObjects.length === 1 ? selectedImageObjects[0] : null;
 
   const updateSelectedText = (updates: Partial<CanvasObject>) => {
